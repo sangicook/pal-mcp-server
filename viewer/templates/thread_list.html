@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Threads - PAL Consensus Viewer{% endblock %}
+
+{% block content %}
+<div class="refresh-bar">
+    <span>{{ threads|length }} thread{{ 's' if threads|length != 1 }}</span>
+    <button onclick="location.reload()">Refresh</button>
+    <label>
+        <input type="checkbox" id="auto-refresh"> Auto-refresh (30s)
+    </label>
+</div>
+
+{% if error %}
+<div class="card">
+    <p style="color: var(--badge-against);">{{ error }}</p>
+</div>
+{% endif %}
+
+{% if threads %}
+<div class="card" style="padding: 0; overflow-x: auto;">
+    <table class="thread-table">
+        <thead>
+            <tr>
+                <th>Proposal</th>
+                <th>Models</th>
+                <th>Turns</th>
+                <th>Updated</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in threads %}
+            <tr>
+                <td class="thread-preview">
+                    <a href="/threads/{{ t.thread_id }}">{{ t.preview }}</a>
+                    <div class="thread-meta">
+                        <span class="badge-tool">{{ t.tool_name }}</span>
+                    </div>
+                </td>
+                <td>
+                    {% for model in t.models %}
+                    <span class="badge badge-neutral" style="margin-bottom: 2px;">{{ model }}</span>
+                    {% endfor %}
+                </td>
+                <td>{{ t.turn_count }}</td>
+                <td class="thread-meta" title="{{ t.last_updated_at | fmttime }}">
+                    {{ t.last_updated_at | reltime }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <h2>No conversations yet</h2>
+    <p>Run a consensus query with the PAL MCP Server to see threads here.</p>
+    <p style="margin-top: 0.5rem; font-size: 0.85rem;">
+        Database: <code>{{ db_path }}</code>
+    </p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const cb = document.getElementById('auto-refresh');
+    let timer = null;
+    cb.addEventListener('change', () => {
+        if (cb.checked) {
+            timer = setInterval(() => location.reload(), 30000);
+        } else {
+            clearInterval(timer);
+            timer = null;
+        }
+    });
+</script>
+{% endblock %}

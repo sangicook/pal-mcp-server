@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Thread {{ thread.thread_id[:8] }} - PAL Consensus Viewer{% endblock %}
+
+{% block content %}
+<a href="/threads" class="back-link">&larr; All threads</a>
+
+{# ---------- Thread header ---------- #}
+<div class="card thread-header">
+    <h2>{{ proposal[:120] }}{% if proposal|length > 120 %}...{% endif %}</h2>
+    <div class="meta-row">
+        <span class="badge-tool">{{ thread.tool_name }}</span>
+        Thread <code>{{ thread.thread_id[:8] }}</code>
+        &middot; Created {{ thread.created_at | reltime }}
+        &middot; Updated {{ thread.last_updated_at | reltime }}
+        &middot; {{ turns|length }} turn{{ 's' if turns|length != 1 }}
+    </div>
+
+    {# Proposal text #}
+    {% if proposal|length > 120 %}
+    <details style="margin-top: 0.5rem;">
+        <summary>Full proposal</summary>
+        <div class="detail-content md-content">{{ proposal | md }}</div>
+    </details>
+    {% endif %}
+
+    {# Model roster #}
+    {% if roster %}
+    <div style="margin-top: 0.75rem;">
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem;">Model Roster</div>
+        <div class="roster">
+            {% for m in roster %}
+            <div class="roster-item">
+                <span class="chat-model-name">{{ m.model }}</span>
+                {% if m.stance %}
+                <span class="badge badge-{{ m.stance | lower }}">{{ m.stance }}</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{# ---------- Chat turns ---------- #}
+<div class="chat-container">
+    {% for turn in turns %}
+    <div class="chat-turn role-{{ turn.role }}">
+        <div class="chat-bubble">
+            {# Header row #}
+            <div class="chat-header">
+                {% if turn.model_name %}
+                    {# Provider badge #}
+                    {% set prov = turn.model_provider or 'custom' %}
+                    <span class="badge-provider badge-{{ prov }}">{{ prov }}</span>
+                    <span class="chat-model-name">{{ turn.model_name }}</span>
+                {% elif turn.role == 'user' %}
+                    <span class="chat-model-name">Agent</span>
+                {% else %}
+                    <span class="chat-model-name">Assistant</span>
+                {% endif %}
+
+                {# Stance badge #}
+                {% if turn.stance %}
+                <span class="badge badge-{{ turn.stance | lower }}">{{ turn.stance }}</span>
+                {% endif %}
+
+                {# Step indicator #}
+                {% if turn.step_info %}
+                <span class="step-indicator">
+                    Step {{ turn.step_info.step_number }} of {{ turn.step_info.total_steps }}
+                </span>
+                {% endif %}
+
+                {# Tool name if cross-tool #}
+                {% if turn.tool_name %}
+                <span class="badge-tool">{{ turn.tool_name }}</span>
+                {% endif %}
+
+                <span class="chat-timestamp" title="{{ turn.timestamp | fmttime }}">
+                    {{ turn.timestamp | reltime }}
+                </span>
+            </div>
+
+            {# Main content #}
+            <div class="md-content">
+                {{ turn.display_text | md }}
+            </div>
+
+            {# Analysis summary #}
+            {% if turn.analysis_summary %}
+            <details>
+                <summary>Analysis Summary</summary>
+                <div class="detail-content">
+                    {% if turn.analysis_summary.findings %}
+                    <p><strong>Findings:</strong> {{ turn.analysis_summary.findings }}</p>
+                    {% endif %}
+                    {% if turn.analysis_summary.issues_found %}
+                    <p><strong>Issues:</strong> {{ turn.analysis_summary.issues_found }}</p>
+                    {% endif %}
+                    {% if turn.analysis_summary.insights %}
+                    <p><strong>Insights:</strong> {{ turn.analysis_summary.insights }}</p>
+                    {% endif %}
+                    {% if turn.analysis_summary.relevant_context %}
+                    <p><strong>Context:</strong> {{ turn.analysis_summary.relevant_context }}</p>
+                    {% endif %}
+                </div>
+            </details>
+            {% endif %}
+
+            {# Work history #}
+            {% if turn.work_history %}
+            <details>
+                <summary>Work History ({{ turn.work_history | length }} step{{ 's' if turn.work_history|length != 1 }})</summary>
+                <div class="detail-content">
+                    {% for step in turn.work_history %}
+                    <div style="margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);">
+                        {% if step.step_description %}
+                        <div><strong>{{ step.step_description }}</strong></div>
+                        {% endif %}
+                        {% if step.findings %}
+                        <div style="font-size: 0.8rem;">{{ step.findings }}</div>
+                        {% endif %}
+                        {% if step.confidence %}
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">
+                            Confidence: {{ step.confidence }}
+                        </div>
+                        {% endif %}
+                        {% if step.files %}
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">
+                            Files: {{ step.files | join(', ') }}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+
+            {# Files list #}
+            {% if turn.files %}
+            <div class="files-list">
+                <strong>Files:</strong>
+                {% for f in turn.files %}
+                <code>{{ f }}</code>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if not turns %}
+<div class="empty-state">
+    <h2>No turns in this thread</h2>
+    <p>This thread was created but has no conversation turns.</p>
+</div>
+{% endif %}
+{% endblock %}

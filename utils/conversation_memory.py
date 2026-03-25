@@ -207,14 +207,21 @@ class ThreadContext(BaseModel):
 
 def get_storage():
     """
-    Get in-memory storage backend for conversation persistence.
+    Get storage backend for conversation persistence.
 
     Returns:
-        InMemoryStorage: Thread-safe in-memory storage backend
+        Storage backend (SQLiteStorage or InMemoryStorage)
     """
     from .storage_backend import get_storage_backend
 
     return get_storage_backend()
+
+
+def _is_sqlite_storage() -> bool:
+    """Check if the active storage backend is SQLiteStorage (supports normalized ops)."""
+    from .storage_backend import SQLiteStorage
+
+    return isinstance(get_storage(), SQLiteStorage)
 
 
 def create_thread(tool_name: str, initial_request: dict[str, Any], parent_thread_id: Optional[str] = None) -> str:
@@ -259,10 +266,12 @@ def create_thread(tool_name: str, initial_request: dict[str, Any], parent_thread
         initial_context=filtered_context,
     )
 
-    # Store in memory with configurable TTL to prevent indefinite accumulation
     storage = get_storage()
-    key = f"thread:{thread_id}"
-    storage.setex(key, CONVERSATION_TIMEOUT_SECONDS, context.model_dump_json())
+    if _is_sqlite_storage():
+        storage.save_thread(context.model_dump())
+    else:
+        key = f"thread:{thread_id}"
+        storage.setex(key, CONVERSATION_TIMEOUT_SECONDS, context.model_dump_json())
 
     logger.debug(f"[THREAD] Created new thread {thread_id} with parent {parent_thread_id}")
 
@@ -351,41 +360,64 @@ def add_turn(
     """
     logger.debug(f"[FLOW] Adding {role} turn to {thread_id} ({tool_name})")
 
-    context = get_thread(thread_id)
-    if not context:
-        logger.debug(f"[FLOW] Thread {thread_id} not found for turn addition")
-        return False
+    storage = get_storage()
+    now = datetime.now(timezone.utc).isoformat()
 
-    # Check turn limit to prevent runaway conversations
-    if len(context.turns) >= MAX_CONVERSATION_TURNS:
-        logger.debug(f"[FLOW] Thread {thread_id} at max turns ({MAX_CONVERSATION_TURNS})")
-        return False
+    if _is_sqlite_storage():
+        try:
+            turn_count = storage.get_turn_count(thread_id)
+            if turn_count >= MAX_CONVERSATION_TURNS:
+                logger.debug(f"[FLOW] Thread {thread_id} at max turns ({MAX_CONVERSATION_TURNS})")
+                return False
 
-    # Create new turn with complete metadata
-    turn = ConversationTurn(
-        role=role,
-        content=content,
-        timestamp=datetime.now(timezone.utc).isoformat(),
-        files=files,  # Preserved for cross-tool file context
-        images=images,  # Preserved for cross-tool visual context
-        tool_name=tool_name,  # Track which tool generated this turn
-        model_provider=model_provider,  # Track model provider
-        model_name=model_name,  # Track specific model
-        model_metadata=model_metadata,  # Additional model info
-    )
+            turn_dict = {
+                "role": role,
+                "content": content,
+                "timestamp": now,
+                "files": files,
+                "images": images,
+                "tool_name": tool_name,
+                "model_provider": model_provider,
+                "model_name": model_name,
+                "model_metadata": model_metadata,
+            }
+            storage.append_turn(thread_id, turn_dict, turn_count)
+            storage.update_thread_timestamp(thread_id, now)
+            return True
+        except Exception as e:
+            logger.debug(f"[FLOW] Failed to append turn to storage: {type(e).__name__}: {e}")
+            return False
+    else:
+        context = get_thread(thread_id)
+        if not context:
+            logger.debug(f"[FLOW] Thread {thread_id} not found for turn addition")
+            return False
 
-    context.turns.append(turn)
-    context.last_updated_at = datetime.now(timezone.utc).isoformat()
+        if len(context.turns) >= MAX_CONVERSATION_TURNS:
+            logger.debug(f"[FLOW] Thread {thread_id} at max turns ({MAX_CONVERSATION_TURNS})")
+            return False
 
-    # Save back to storage and refresh TTL
-    try:
-        storage = get_storage()
-        key = f"thread:{thread_id}"
-        storage.setex(key, CONVERSATION_TIMEOUT_SECONDS, context.model_dump_json())  # Refresh TTL to configured timeout
-        return True
-    except Exception as e:
-        logger.debug(f"[FLOW] Failed to save turn to storage: {type(e).__name__}")
-        return False
+        turn = ConversationTurn(
+            role=role,
+            content=content,
+            timestamp=now,
+            files=files,
+            images=images,
+            tool_name=tool_name,
+            model_provider=model_provider,
+            model_name=model_name,
+            model_metadata=model_metadata,
+        )
+        context.turns.append(turn)
+        context.last_updated_at = now
+
+        try:
+            key = f"thread:{thread_id}"
+            storage.setex(key, CONVERSATION_TIMEOUT_SECONDS, context.model_dump_json())
+            return True
+        except Exception as e:
+            logger.debug(f"[FLOW] Failed to save turn to storage: {type(e).__name__}")
+            return False
 
 
 def get_thread_chain(thread_id: str, max_depth: int = 20) -> list[ThreadContext]:

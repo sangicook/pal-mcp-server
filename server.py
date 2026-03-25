@@ -46,6 +46,8 @@ from config import (  # noqa: E402
 )
 from tools import (  # noqa: E402
     ConsensusTool,
+    HistoryListTool,
+    HistorySearchTool,
     ListModelsTool,
     VersionTool,
 )
@@ -242,6 +244,8 @@ def filter_disabled_tools(all_tools: dict[str, Any]) -> dict[str, Any]:
 # Tools are instantiated once and reused across requests (stateless design)
 TOOLS = {
     "consensus": ConsensusTool(),  # Step-by-step consensus workflow with multi-model analysis
+    "history_list": HistoryListTool(),  # List/filter past conversation threads
+    "history_search": HistorySearchTool(),  # Search conversation content
     "listmodels": ListModelsTool(),  # List all available AI models by provider
     "version": VersionTool(),  # Display server version and system information
 }
@@ -263,6 +267,16 @@ PROMPT_TEMPLATES = {
         "name": "version",
         "description": "Show server version and system information",
         "template": "Show PAL MCP Server version",
+    },
+    "history_list": {
+        "name": "history_list",
+        "description": "List past conversation threads with optional filters",
+        "template": "List recent conversation threads",
+    },
+    "history_search": {
+        "name": "history_search",
+        "description": "Search past conversation content",
+        "template": "Search conversations for {query}",
     },
 }
 
