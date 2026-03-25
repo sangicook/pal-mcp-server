@@ -29,7 +29,7 @@ from mcp.types import TextContent
 from config import TEMPERATURE_ANALYTICAL
 from systemprompts import CONSENSUS_PROMPT
 from tools.shared.base_models import ConsolidatedFindings, WorkflowRequest
-from utils.conversation_memory import MAX_CONVERSATION_TURNS, create_thread, get_thread
+from utils.conversation_memory import MAX_CONVERSATION_TURNS, add_turn, create_thread, get_thread
 
 from .workflow.base import WorkflowTool
 
@@ -475,6 +475,21 @@ of the evidence, even when it strongly points in one direction.""",
 
                 # Consult the model for this step
                 model_response = await self._consult_model(self.models_to_consult[model_idx], request)
+
+                # Persist the raw model verdict as its own turn
+                if continuation_id and model_response.get("status") == "success" and model_response.get("verdict"):
+                    add_turn(
+                        thread_id=continuation_id,
+                        role="assistant",
+                        content=model_response["verdict"],
+                        tool_name=self.get_name(),
+                        model_provider=model_response.get("metadata", {}).get("provider"),
+                        model_name=model_response["model"],
+                        model_metadata={
+                            "stance": model_response.get("stance", "neutral"),
+                            "turn_type": "consultant_response",
+                        },
+                    )
 
                 # Add to accumulated responses
                 self.accumulated_responses.append(model_response)

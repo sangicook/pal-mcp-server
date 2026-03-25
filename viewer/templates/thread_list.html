@@ -1,67 +1,269 @@
 {% extends "base.html" %}
-{% block title %}Threads - PAL Consensus Viewer{% endblock %}
+{% block title %}Threads — PAL Consensus Viewer{% endblock %}
+
+{% block header_right %}
+{% if db_path %}<span title="{{ db_path }}">{{ db_path | truncate(45) }}</span>{% endif %}
+{% endblock %}
 
 {% block content %}
-<div class="refresh-bar">
-    <span>{{ threads|length }} thread{{ 's' if threads|length != 1 }}</span>
-    <button onclick="location.reload()">Refresh</button>
-    <label>
-        <input type="checkbox" id="auto-refresh"> Auto-refresh (30s)
-    </label>
+{# ---------- Toolbar ---------- #}
+<div class="toolbar animate-in" style="animation-delay: 0.05s;">
+    <div class="toolbar-left">
+        <span class="toolbar-count">{{ threads|length }}</span>
+        <span class="toolbar-label">thread{{ 's' if threads|length != 1 }}</span>
+    </div>
+    <div class="toolbar-right">
+        <label class="toggle-wrap">
+            <input type="checkbox" id="auto-refresh">
+            <span class="toggle-track"><span class="toggle-knob"></span></span>
+            <span class="toggle-text">Auto-refresh</span>
+        </label>
+        <button class="btn-icon" onclick="location.reload()" title="Refresh now">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+    </div>
 </div>
 
 {% if error %}
-<div class="card">
-    <p style="color: var(--badge-against);">{{ error }}</p>
+<div class="error-banner animate-in" style="animation-delay: 0.1s;">
+    <p>{{ error }}</p>
 </div>
 {% endif %}
 
+{# ---------- Thread cards ---------- #}
 {% if threads %}
-<div class="card" style="padding: 0; overflow-x: auto;">
-    <table class="thread-table">
-        <thead>
-            <tr>
-                <th>Proposal</th>
-                <th>Models</th>
-                <th>Turns</th>
-                <th>Updated</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for t in threads %}
-            <tr>
-                <td class="thread-preview">
-                    <a href="/threads/{{ t.thread_id }}">{{ t.preview }}</a>
-                    <div class="thread-meta">
-                        <span class="badge-tool">{{ t.tool_name }}</span>
-                    </div>
-                </td>
-                <td>
-                    {% for model in t.models %}
-                    <span class="badge badge-neutral" style="margin-bottom: 2px;">{{ model }}</span>
-                    {% endfor %}
-                </td>
-                <td>{{ t.turn_count }}</td>
-                <td class="thread-meta" title="{{ t.last_updated_at | fmttime }}">
-                    {{ t.last_updated_at | reltime }}
-                </td>
-            </tr>
+<div class="thread-list">
+    {% for t in threads %}
+    <a href="/threads/{{ t.thread_id }}" class="thread-card animate-in" style="animation-delay: {{ 0.08 + loop.index0 * 0.05 }}s;">
+        {# Top zone: preview text #}
+        <div class="tc-preview">{{ t.preview }}</div>
+
+        {# Model chips #}
+        <div class="tc-chips">
+            {% for model in t.models %}
+            <span class="chip-model">{{ model }}</span>
             {% endfor %}
-        </tbody>
-    </table>
+        </div>
+
+        {# Footer: tool + meta — separated by background tone, not lines #}
+        <div class="tc-footer">
+            <span class="chip-tool">{{ t.tool_name }}</span>
+            <div class="tc-meta-group">
+                <span class="tc-meta-item">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    {{ t.turn_count }}
+                </span>
+                <span class="tc-meta-item" title="{{ t.last_updated_at | fmttime }}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    {{ t.last_updated_at | reltime }}
+                </span>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
 </div>
 {% else %}
-<div class="empty-state">
+<div class="empty-state animate-in" style="animation-delay: 0.1s;">
+    <div class="empty-state-icon">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </div>
     <h2>No conversations yet</h2>
     <p>Run a consensus query with the PAL MCP Server to see threads here.</p>
-    <p style="margin-top: 0.5rem; font-size: 0.85rem;">
-        Database: <code>{{ db_path }}</code>
-    </p>
+    {% if db_path %}
+    <code>{{ db_path }}</code>
+    {% endif %}
 </div>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
+<style>
+    /* ---------- Toolbar ---------- */
+    .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--space-8);
+    }
+    .toolbar-left {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-2);
+    }
+    .toolbar-count {
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: var(--on-surface);
+    }
+    .toolbar-label {
+        font-size: 0.88rem;
+        font-weight: 500;
+        color: var(--on-surface-muted);
+    }
+    .toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+    }
+
+    /* Custom toggle — no borders, surface shift */
+    .toggle-wrap {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        cursor: pointer;
+        user-select: none;
+    }
+    .toggle-wrap input { display: none; }
+    .toggle-track {
+        width: 36px;
+        height: 20px;
+        background: var(--surface-container-highest);
+        border-radius: var(--radius-full);
+        position: relative;
+        transition: background 0.3s ease;
+    }
+    .toggle-knob {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 14px;
+        height: 14px;
+        background: var(--on-surface-muted);
+        border-radius: 50%;
+        transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), background 0.3s;
+    }
+    .toggle-wrap input:checked ~ .toggle-track {
+        background: var(--stance-for-surface);
+    }
+    .toggle-wrap input:checked ~ .toggle-track .toggle-knob {
+        transform: translateX(16px);
+        background: var(--primary-container);
+    }
+    .toggle-text {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--on-surface-muted);
+    }
+
+    .btn-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        background: var(--surface-container-low);
+        border: none;
+        border-radius: var(--radius-full);
+        color: var(--on-surface-muted);
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s, transform 0.2s;
+    }
+    .btn-icon:hover {
+        background: var(--stance-for-surface);
+        color: var(--primary);
+        transform: rotate(45deg);
+    }
+
+    /* ---------- Thread list ---------- */
+    .thread-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-4);
+    }
+
+    .thread-card {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-4);
+        /* No borders — depth via surface layering */
+        background: var(--surface-container-lowest);
+        border-radius: var(--radius-xl);
+        padding: var(--space-6) var(--space-8);
+        text-decoration: none;
+        color: var(--on-surface);
+        cursor: pointer;
+        box-shadow: var(--shadow-ambient);
+        transition: box-shadow 0.35s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .thread-card:hover {
+        box-shadow: var(--shadow-lifted);
+        transform: translateY(-2px);
+    }
+    .thread-card:active {
+        transform: translateY(0);
+        box-shadow: var(--shadow-ambient);
+    }
+
+    .tc-preview {
+        font-size: 0.95rem;
+        font-weight: 500;
+        line-height: 1.6;
+        color: var(--on-surface);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .tc-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+    }
+
+    /* Footer uses surface-container-low for "nested" feel — no border divider */
+    .tc-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        background: var(--surface-container-low);
+        margin: 0 calc(-1 * var(--space-8)) calc(-1 * var(--space-6));
+        padding: var(--space-3) var(--space-8);
+        border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+    }
+    .tc-meta-group {
+        display: flex;
+        align-items: center;
+        gap: var(--space-4);
+    }
+    .tc-meta-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--on-surface-muted);
+    }
+    .tc-meta-item svg { opacity: 0.5; }
+
+    /* ---------- Error banner ---------- */
+    .error-banner {
+        background: var(--error-container);
+        color: var(--error);
+        padding: var(--space-4) var(--space-6);
+        border-radius: var(--radius-lg);
+        margin-bottom: var(--space-6);
+        font-size: 0.88rem;
+        font-weight: 500;
+    }
+
+    @media (max-width: 680px) {
+        .thread-card {
+            padding: var(--space-4) var(--space-4);
+            border-radius: var(--radius-lg);
+        }
+        .tc-footer {
+            margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+            padding: var(--space-3) var(--space-4);
+            border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+        }
+        .toolbar { flex-direction: column; align-items: flex-start; gap: var(--space-3); }
+    }
+</style>
+
 <script>
     const cb = document.getElementById('auto-refresh');
     let timer = null;

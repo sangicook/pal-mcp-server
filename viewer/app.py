@@ -447,6 +447,11 @@ def thread_detail(thread_id: str):
         # Extract work_history from model_metadata
         metadata = turn.get("model_metadata") or {}
         work_history = metadata.get("work_history", [])
+        turn_type = metadata.get("turn_type")
+
+        # For consultant_response turns, get stance from metadata
+        if not stance and turn_type == "consultant_response":
+            stance = metadata.get("stance")
 
         enriched_turns.append(
             {
@@ -457,6 +462,7 @@ def thread_detail(thread_id: str):
                 "model_name": model_name,
                 "model_provider": turn.get("model_provider"),
                 "stance": stance,
+                "turn_type": turn_type,
                 "timestamp": turn.get("timestamp", ""),
                 "files": turn.get("files") or [],
                 "images": turn.get("images") or [],
