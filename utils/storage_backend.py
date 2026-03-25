@@ -115,13 +115,13 @@ class SQLiteStorage:
 
         self._write_lock = threading.Lock()
         self._local = threading.local()
+        self._connections: list[sqlite3.Connection] = []
+        self._conn_lock = threading.Lock()
         self._shutdown_flag = False
         self._get_count = 0
 
-        # Initialize the database schema
+        # Initialize the database schema (PRAGMAs are set in _get_connection)
         conn = self._get_connection()
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS conversation_store (
@@ -149,11 +149,12 @@ class SQLiteStorage:
     def _get_connection(self) -> sqlite3.Connection:
         """Get a thread-local SQLite connection."""
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(
-                self._db_path, check_same_thread=False
-            )
-            self._local.conn.execute("PRAGMA journal_mode=WAL")
-            self._local.conn.execute("PRAGMA busy_timeout=5000")
+            conn = sqlite3.connect(self._db_path)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            self._local.conn = conn
+            with self._conn_lock:
+                self._connections.append(conn)
         return self._local.conn
 
     def get(self, key: str) -> Optional[str]:
@@ -165,9 +166,11 @@ class SQLiteStorage:
         )
         row = cursor.fetchone()
 
-        # Lazy cleanup: every 100th call
-        self._get_count += 1
-        if self._get_count % 100 == 0:
+        # Lazy cleanup: every 100th call (counter protected by write lock)
+        with self._write_lock:
+            self._get_count += 1
+            should_cleanup = self._get_count % 100 == 0
+        if should_cleanup:
             self._cleanup_expired()
 
         if row:
@@ -182,9 +185,13 @@ class SQLiteStorage:
             conn = self._get_connection()
             conn.execute(
                 """
-                INSERT OR REPLACE INTO conversation_store
+                INSERT INTO conversation_store
                     (key, value, expires_at, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value=excluded.value,
+                    expires_at=excluded.expires_at,
+                    updated_at=excluded.updated_at
                 """,
                 (key, value, now + ttl_seconds, now, now),
             )
@@ -218,12 +225,19 @@ class SQLiteStorage:
             logger.warning(f"Cleanup error: {e}")
 
     def shutdown(self):
-        """Graceful shutdown of background thread and connections."""
+        """Graceful shutdown of background thread and all connections."""
         self._shutdown_flag = True
         if self._cleanup_thread.is_alive():
             self._cleanup_thread.join(timeout=1)
-        if hasattr(self._local, "conn") and self._local.conn:
-            self._local.conn.close()
+        # Close all thread-local connections
+        with self._conn_lock:
+            for conn in self._connections:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            self._connections.clear()
+        if hasattr(self._local, "conn"):
             self._local.conn = None
 
 
@@ -248,6 +262,10 @@ def get_storage_backend():
                     _storage_instance = InMemoryStorage()
                     logger.info("Initialized in-memory conversation storage")
                 else:
+                    if backend != "sqlite":
+                        logger.warning(
+                            f"Unknown PAL_STORAGE_BACKEND '{backend}', defaulting to sqlite"
+                        )
                     _storage_instance = SQLiteStorage()
                     logger.info("Initialized SQLite conversation storage")
     return _storage_instance
