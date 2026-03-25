@@ -63,11 +63,6 @@ TEMPERATURE_BALANCED = 1.0  # For general chat
 # Used when brainstorming, exploring alternatives, or architectural discussions
 TEMPERATURE_CREATIVE = 1.0  # For architecture, deep thinking
 
-# Thinking Mode Defaults
-# DEFAULT_THINKING_MODE_THINKDEEP: Default thinking depth for extended reasoning tool
-# Higher modes use more computational budget but provide deeper analysis
-DEFAULT_THINKING_MODE_THINKDEEP = get_env("DEFAULT_THINKING_MODE_THINKDEEP", "high") or "high"
-
 # Consensus Tool Defaults
 # Consensus timeout and rate limiting settings
 DEFAULT_CONSENSUS_TIMEOUT = 120.0  # 2 minutes per model

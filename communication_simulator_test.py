@@ -110,12 +110,10 @@ class CommunicationSimulator:
         # Define quick mode tests (essential tests for time-limited testing)
         # Focus on tests that work with current tool configurations
         self.quick_mode_tests = [
-            "cross_tool_continuation",  # Cross-tool conversation memory
-            "basic_conversation",  # Basic chat functionality
-            "content_validation",  # Content validation and deduplication
-            "model_thinking_config",  # Flash/flashlite model testing
-            "o3_model_selection",  # O3 model selection testing
-            "per_tool_deduplication",  # File deduplication for individual tools
+            "consensus_conversation",  # Consensus conversation flow
+            "consensus_workflow_accurate",  # Consensus workflow accuracy
+            "consensus_three_models",  # Consensus with multiple models
+            "conversation_chain_validation",  # Conversation threading
         ]
 
         # If quick mode is enabled, override selected_tests

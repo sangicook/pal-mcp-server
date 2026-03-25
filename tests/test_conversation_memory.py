@@ -771,5 +771,53 @@ class TestConversationFlow:
                 assert large_file in history
 
 
+class TestConversationMemoryWithSQLite:
+    """Tests that exercise conversation memory against real SQLite storage (no mocks)."""
+
+    def test_create_and_retrieve_thread_roundtrip(self):
+        """Create a thread and retrieve it with real SQLite backend."""
+        thread_id = create_thread("consensus", {"prompt": "test roundtrip"})
+        assert thread_id is not None
+
+        context = get_thread(thread_id)
+        assert context is not None
+        assert context.tool_name == "consensus"
+
+    def test_add_turn_persists_across_get_calls(self):
+        """Turns added to a thread are visible on subsequent get_thread calls."""
+        thread_id = create_thread("consensus", {"prompt": "turn test"})
+        add_turn(thread_id, "user", "Hello")
+        add_turn(thread_id, "assistant", "Hi there", model_name="gemini-2.5-flash")
+
+        context = get_thread(thread_id)
+        assert len(context.turns) == 2
+        assert context.turns[0].content == "Hello"
+        assert context.turns[1].content == "Hi there"
+        assert context.turns[1].model_name == "gemini-2.5-flash"
+
+    def test_thread_survives_storage_reset(self):
+        """Simulate a restart by clearing the singleton and re-getting the thread."""
+        import utils.storage_backend as sb
+
+        thread_id = create_thread("consensus", {"prompt": "persist test"})
+        add_turn(thread_id, "assistant", "I will persist")
+
+        # Clear the singleton to simulate a server restart
+        old_instance = sb._storage_instance
+        sb._storage_instance = None
+
+        try:
+            # Re-get the thread through a fresh singleton (same DB file via env var)
+            context = get_thread(thread_id)
+            assert context is not None
+            assert len(context.turns) == 1
+            assert context.turns[0].content == "I will persist"
+        finally:
+            # Clean up: shutdown new instance, restore old
+            if sb._storage_instance is not None:
+                sb._storage_instance.shutdown()
+            sb._storage_instance = old_instance
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

@@ -192,6 +192,23 @@ def clear_model_restriction_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _sqlite_test_isolation(tmp_path, monkeypatch):
+    """Isolate SQLite storage to a temp directory so tests don't pollute ~/.pal-mcp/."""
+    monkeypatch.setenv("PAL_DB_PATH", str(tmp_path / "test_conversations.db"))
+
+    # Reset the storage singleton so each test gets a fresh instance
+    import utils.storage_backend as sb
+
+    old_instance = sb._storage_instance
+    sb._storage_instance = None
+    yield
+    # Shutdown any storage instance created during the test
+    if sb._storage_instance is not None:
+        sb._storage_instance.shutdown()
+    sb._storage_instance = old_instance
+
+
+@pytest.fixture(autouse=True)
 def disable_force_env_override(monkeypatch):
     """Default tests to runtime environment visibility unless they explicitly opt in."""
 

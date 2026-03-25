@@ -25,20 +25,20 @@ class TestConversationMissingFiles:
             thread_id="test-thread",
             created_at="2024-01-01T00:00:00Z",
             last_updated_at="2024-01-01T00:05:00Z",
-            tool_name="analyze",
+            tool_name="consensus",
             turns=[
                 ConversationTurn(
                     role="user",
                     content="Please analyze this file",
                     timestamp="2024-01-01T00:01:00Z",
                     files=["/nonexistent/missing_file.py"],  # File that doesn't exist
-                    tool_name="analyze",
+                    tool_name="consensus",
                 ),
                 ConversationTurn(
                     role="assistant",
                     content="Here's my analysis...",
                     timestamp="2024-01-01T00:02:00Z",
-                    tool_name="analyze",
+                    tool_name="consensus",
                 ),
             ],
             initial_context={"path": "/nonexistent/missing_file.py"},

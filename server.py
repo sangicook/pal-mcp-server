@@ -1,18 +1,15 @@
 """
-PAL MCP Server - Main server implementation
+PAL MCP Server - Consensus-Only Server
 
 This module implements the core MCP (Model Context Protocol) server that provides
-AI-powered tools for code analysis, review, and assistance using multiple AI models.
+the consensus tool for multi-model analysis using multiple AI providers.
 
-The server follows the MCP specification to expose various AI tools as callable functions
-that can be used by MCP clients (like Claude). Each tool provides specialized functionality
-such as code review, debugging, deep thinking, and general chat capabilities.
+The server follows the MCP specification and exposes three tools:
+- consensus: Step-by-step consensus workflow with multi-model analysis
+- listmodels: List all available AI models by provider
+- version: Display server version and system information
 
-Key Components:
-- MCP Server: Handles protocol communication and tool discovery
-- Tool Registry: Maps tool names to their implementations
-- Request Handler: Processes incoming tool calls and returns formatted responses
-- Configuration: Manages API keys and model settings
+Conversations are persisted to SQLite (default) for cross-restart durability.
 
 The server runs on stdio (standard input/output) and communicates using JSON-RPC messages
 as defined by the MCP protocol.
@@ -48,23 +45,8 @@ from config import (  # noqa: E402
     __version__,
 )
 from tools import (  # noqa: E402
-    AnalyzeTool,
-    ChallengeTool,
-    ChatTool,
-    CLinkTool,
-    CodeReviewTool,
     ConsensusTool,
-    DebugIssueTool,
-    DocgenTool,
     ListModelsTool,
-    LookupTool,
-    PlannerTool,
-    PrecommitTool,
-    RefactorTool,
-    SecauditTool,
-    TestGenTool,
-    ThinkDeepTool,
-    TracerTool,
     VersionTool,
 )
 from tools.models import ToolOutput  # noqa: E402
@@ -259,22 +241,7 @@ def filter_disabled_tools(all_tools: dict[str, Any]) -> dict[str, Any]:
 # Each tool provides specialized functionality for different development tasks
 # Tools are instantiated once and reused across requests (stateless design)
 TOOLS = {
-    "chat": ChatTool(),  # Interactive development chat and brainstorming
-    "clink": CLinkTool(),  # Bridge requests to configured AI CLIs
-    "thinkdeep": ThinkDeepTool(),  # Step-by-step deep thinking workflow with expert analysis
-    "planner": PlannerTool(),  # Interactive sequential planner using workflow architecture
     "consensus": ConsensusTool(),  # Step-by-step consensus workflow with multi-model analysis
-    "codereview": CodeReviewTool(),  # Comprehensive step-by-step code review workflow with expert analysis
-    "precommit": PrecommitTool(),  # Step-by-step pre-commit validation workflow
-    "debug": DebugIssueTool(),  # Root cause analysis and debugging assistance
-    "secaudit": SecauditTool(),  # Comprehensive security audit with OWASP Top 10 and compliance coverage
-    "docgen": DocgenTool(),  # Step-by-step documentation generation with complexity analysis
-    "analyze": AnalyzeTool(),  # General-purpose file and code analysis
-    "refactor": RefactorTool(),  # Step-by-step refactoring analysis workflow with expert validation
-    "tracer": TracerTool(),  # Static call path prediction and control flow analysis
-    "testgen": TestGenTool(),  # Step-by-step test generation workflow with expert validation
-    "challenge": ChallengeTool(),  # Critical challenge prompt wrapper to avoid automatic agreement
-    "apilookup": LookupTool(),  # Quick web/API lookup instructions
     "listmodels": ListModelsTool(),  # List all available AI models by provider
     "version": VersionTool(),  # Display server version and system information
 }
@@ -282,85 +249,10 @@ TOOLS = filter_disabled_tools(TOOLS)
 
 # Rich prompt templates for all tools
 PROMPT_TEMPLATES = {
-    "chat": {
-        "name": "chat",
-        "description": "Chat and brainstorm ideas",
-        "template": "Chat with {model} about this",
-    },
-    "clink": {
-        "name": "clink",
-        "description": "Forward a request to a configured AI CLI (e.g., Gemini)",
-        "template": "Use clink with cli_name=<cli> to run this prompt",
-    },
-    "thinkdeep": {
-        "name": "thinkdeeper",
-        "description": "Step-by-step deep thinking workflow with expert analysis",
-        "template": "Start comprehensive deep thinking workflow with {model} using {thinking_mode} thinking mode",
-    },
-    "planner": {
-        "name": "planner",
-        "description": "Break down complex ideas, problems, or projects into multiple manageable steps",
-        "template": "Create a detailed plan with {model}",
-    },
     "consensus": {
         "name": "consensus",
         "description": "Step-by-step consensus workflow with multi-model analysis",
         "template": "Start comprehensive consensus workflow with {model}",
-    },
-    "codereview": {
-        "name": "review",
-        "description": "Perform a comprehensive code review",
-        "template": "Perform a comprehensive code review with {model}",
-    },
-    "precommit": {
-        "name": "precommit",
-        "description": "Step-by-step pre-commit validation workflow",
-        "template": "Start comprehensive pre-commit validation workflow with {model}",
-    },
-    "debug": {
-        "name": "debug",
-        "description": "Debug an issue or error",
-        "template": "Help debug this issue with {model}",
-    },
-    "secaudit": {
-        "name": "secaudit",
-        "description": "Comprehensive security audit with OWASP Top 10 coverage",
-        "template": "Perform comprehensive security audit with {model}",
-    },
-    "docgen": {
-        "name": "docgen",
-        "description": "Generate comprehensive code documentation with complexity analysis",
-        "template": "Generate comprehensive documentation with {model}",
-    },
-    "analyze": {
-        "name": "analyze",
-        "description": "Analyze files and code structure",
-        "template": "Analyze these files with {model}",
-    },
-    "refactor": {
-        "name": "refactor",
-        "description": "Refactor and improve code structure",
-        "template": "Refactor this code with {model}",
-    },
-    "tracer": {
-        "name": "tracer",
-        "description": "Trace code execution paths",
-        "template": "Generate tracer analysis with {model}",
-    },
-    "testgen": {
-        "name": "testgen",
-        "description": "Generate comprehensive tests",
-        "template": "Generate comprehensive tests with {model}",
-    },
-    "challenge": {
-        "name": "challenge",
-        "description": "Challenge a statement critically without automatic agreement",
-        "template": "Challenge this statement critically",
-    },
-    "apilookup": {
-        "name": "apilookup",
-        "description": "Look up the latest API or SDK information",
-        "template": "Lookup latest API docs for {model}",
     },
     "listmodels": {
         "name": "listmodels",
@@ -1006,8 +898,6 @@ async def reconstruct_thread_context(arguments: dict[str, Any]) -> dict[str, Any
 
     CROSS-TOOL CONTINUATION SUPPORT:
     This function enables seamless handoffs between different tools:
-    - Analyze tool → Debug tool: Full file context and analysis preserved
-    - Chat tool → CodeReview tool: Conversation context maintained
     - Any tool → Any tool: Complete cross-tool knowledge transfer
 
     ERROR HANDLING & RECOVERY:
@@ -1365,14 +1255,14 @@ async def handle_get_prompt(name: str, arguments: dict[str, Any] = None) -> GetP
 
     # Handle special "continue" case
     if name.lower() == "continue":
-        # This is "/pal:continue" - use chat tool as default for continuation
-        tool_name = "chat"
+        # This is "/pal:continue" - use consensus tool as default for continuation
+        tool_name = "consensus"
         template_info = {
             "name": "continue",
             "description": "Continue the previous conversation",
             "template": "Continue the conversation",
         }
-        logger.debug("Using /pal:continue - defaulting to chat tool")
+        logger.debug("Using /pal:continue - defaulting to consensus tool")
     else:
         # Find the corresponding tool by checking prompt names
         tool_name = None
@@ -1474,11 +1364,6 @@ async def main():
         logger.info("Model mode: AUTO (CLI will select the best model for each task)")
     else:
         logger.info(f"Model mode: Fixed model '{DEFAULT_MODEL}'")
-
-    # Import here to avoid circular imports
-    from config import DEFAULT_THINKING_MODE_THINKDEEP
-
-    logger.info(f"Default thinking mode (ThinkDeep): {DEFAULT_THINKING_MODE_THINKDEEP}")
 
     logger.info(f"Available tools: {list(TOOLS.keys())}")
     logger.info("Server ready - waiting for tool requests...")

@@ -137,17 +137,13 @@ python communication_simulator_test.py --quick
 python communication_simulator_test.py --quick --verbose
 ```
 
-**Quick mode runs these 6 essential tests:**
-- `cross_tool_continuation` - Cross-tool conversation memory testing (chat, thinkdeep, codereview, analyze, debug)
+**Quick mode runs these 4 essential tests:**
+- `consensus_conversation` - Consensus conversation flow
+- `consensus_workflow_accurate` - Consensus workflow accuracy with flash model and stance testing
+- `consensus_three_models` - Consensus with multiple models
 - `conversation_chain_validation` - Core conversation threading and memory validation
-- `consensus_workflow_accurate` - Consensus tool with flash model and stance testing
-- `codereview_validation` - CodeReview tool with flash model and multi-step workflows
-- `planner_validation` - Planner tool with flash model and complex planning workflows
-- `token_allocation_validation` - Token allocation and conversation history buildup testing
 
-**Why these 6 tests:** They cover the core functionality including conversation memory (`utils/conversation_memory.py`), chat tool functionality, file processing and deduplication, model selection (flash/flashlite/o3), and cross-tool conversation workflows. These tests validate the most critical parts of the system in minimal time.
-
-**Note:** Some workflow tools (analyze, codereview, planner, consensus, etc.) require specific workflow parameters and may need individual testing rather than quick mode testing.
+**Why these 4 tests:** They cover the core consensus functionality including multi-model analysis, conversation threading (`utils/conversation_memory.py`), and workflow accuracy.
 
 #### Run Individual Simulator Tests (For Detailed Testing)
 ```bash
@@ -168,23 +164,10 @@ python communication_simulator_test.py --individual memory_validation --verbose
 ```
 
 Available simulator tests include:
-- `basic_conversation` - Basic conversation flow with chat tool
-- `content_validation` - Content validation and duplicate detection
-- `per_tool_deduplication` - File deduplication for individual tools
-- `cross_tool_continuation` - Cross-tool conversation continuation scenarios
-- `cross_tool_comprehensive` - Comprehensive cross-tool file deduplication and continuation
-- `line_number_validation` - Line number handling validation across tools
-- `memory_validation` - Conversation memory validation
-- `model_thinking_config` - Model-specific thinking configuration behavior
-- `o3_model_selection` - O3 model selection and usage validation
-- `ollama_custom_url` - Ollama custom URL endpoint functionality
-- `openrouter_fallback` - OpenRouter fallback behavior when only provider
-- `openrouter_models` - OpenRouter model functionality and alias mapping
-- `token_allocation_validation` - Token allocation and conversation history validation
-- `testgen_validation` - TestGen tool validation with specific test function
-- `refactor_validation` - Refactor tool validation with codesmells
+- `consensus_conversation` - Consensus conversation flow
+- `consensus_workflow_accurate` - Consensus workflow accuracy
+- `consensus_three_models` - Consensus with multiple models
 - `conversation_chain_validation` - Conversation chain and threading validation
-- `consensus_stance` - Consensus tool validation with stance steering (for/against/neutral)
 
 **Note**: All simulator tests should be run individually for optimal testing and better error isolation.
 
@@ -194,10 +177,10 @@ Available simulator tests include:
 python -m pytest tests/ -v -m "not integration"
 
 # Run specific test file
-python -m pytest tests/test_refactor.py -v
+python -m pytest tests/test_consensus.py -v
 
 # Run specific test function
-python -m pytest tests/test_refactor.py::TestRefactorTool::test_format_response -v
+python -m pytest tests/test_consensus.py::TestConsensusTool::test_format_response -v
 
 # Run tests with coverage
 python -m pytest tests/ --cov=. --cov-report=html -m "not integration"
@@ -257,6 +240,30 @@ python -m pytest tests/ -v
 5. Verify all tests pass 100%
 
 ### Common Troubleshooting
+
+#### WSL2: MCP Server Fails to Start (Timeout)
+
+**Symptom**: Claude Code shows `pal · ✘ failed` in `/mcp` status. The server never completes the MCP handshake.
+
+**Root Cause**: The Python venv on the Windows filesystem (`/mnt/c/...`) is extremely slow under WSL2. `import mcp` alone takes ~8-9 seconds due to cross-filesystem I/O overhead, which exceeds Claude Code's MCP startup timeout.
+
+**Fix**: Move the venv to the Linux-native filesystem:
+
+```bash
+# Create venv on Linux filesystem (fast I/O)
+python3.12 -m venv /home/$USER/.local/share/pal_venv
+
+# Install dependencies
+/home/$USER/.local/share/pal_venv/bin/pip install -r /mnt/c/.../pal-mcp-server/requirements.txt
+
+# Update ~/.claude.json — change the "command" path in mcpServers.pal:
+#   OLD: "/mnt/c/.../pal-mcp-server/.pal_venv/bin/python"
+#   NEW: "/home/$USER/.local/share/pal_venv/bin/python"
+```
+
+**Result**: Import time drops from ~8.6s to ~1.5s. The server script path (`args[0]`) can remain on `/mnt/c/` — only the Python interpreter needs to be on the Linux filesystem.
+
+**Note**: The `.pal_venv` inside the repo still works for direct invocation (e.g., `source .pal_venv/bin/activate`). The Linux-native venv is specifically for Claude Code's MCP stdio transport, which has a startup timeout constraint.
 
 #### Server Issues
 ```bash
