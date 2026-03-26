@@ -13,7 +13,7 @@ class ModelResponse:
     """Portable representation of a provider completion."""
 
     content: str
-    usage: dict[str, int] = field(default_factory=dict)
+    usage: dict[str, int | float] = field(default_factory=dict)
     model_name: str = ""
     friendly_name: str = ""
     provider: ProviderType = ProviderType.GOOGLE

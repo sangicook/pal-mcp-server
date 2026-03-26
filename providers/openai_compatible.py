@@ -700,14 +700,14 @@ class OpenAICompatibleProvider(ModelProvider):
             # Log warning but don't fail
             logging.warning(f"Parameter validation limited for {model_name}: {e}")
 
-    def _extract_usage(self, response) -> dict[str, int]:
-        """Extract token usage from OpenAI response.
+    def _extract_usage(self, response) -> dict[str, int | float]:
+        """Extract token usage and cost from OpenAI response.
 
         Args:
             response: OpenAI API response object
 
         Returns:
-            Dictionary with usage statistics
+            Dictionary with usage statistics and optional cost
         """
         usage = {}
 
@@ -716,6 +716,18 @@ class OpenAICompatibleProvider(ModelProvider):
             usage["input_tokens"] = getattr(response.usage, "prompt_tokens", 0) or 0
             usage["output_tokens"] = getattr(response.usage, "completion_tokens", 0) or 0
             usage["total_tokens"] = getattr(response.usage, "total_tokens", 0) or 0
+
+            # Extract cost (OpenRouter includes this in usage)
+            cost = getattr(response.usage, "cost", None)
+            if cost is None:
+                model_extra = getattr(response.usage, "model_extra", None)
+                if model_extra and isinstance(model_extra, dict):
+                    cost = model_extra.get("cost")
+            if cost is not None:
+                try:
+                    usage["cost"] = float(cost)
+                except (TypeError, ValueError):
+                    pass
 
         return usage
 

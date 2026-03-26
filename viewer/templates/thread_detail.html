@@ -38,6 +38,18 @@
             <span class="stat-value">{{ thread.last_updated_at | reltime }}</span>
             <span class="stat-label">updated</span>
         </div>
+        {% if total_tokens > 0 %}
+        <div class="stat-item">
+            <span class="stat-value">{{ "{:,}".format(total_tokens) }}</span>
+            <span class="stat-label">tokens</span>
+        </div>
+        {% endif %}
+        {% if total_cost is not none %}
+        <div class="stat-item stat-item--cost">
+            <span class="stat-value">{{ total_cost | fmtcost }}</span>
+            <span class="stat-label">cost</span>
+        </div>
+        {% endif %}
     </div>
 
     {# Model roster — each model is a "player card" #}
@@ -101,6 +113,13 @@
 
                     {% if turn.tool_name %}
                     <span class="chip-tool">{{ turn.tool_name }}</span>
+                    {% endif %}
+
+                    {% if turn.tokens and turn.tokens.total_tokens > 0 %}
+                    <span class="turn-tokens" title="in: {{ "{:,}".format(turn.tokens.input_tokens) }} / out: {{ "{:,}".format(turn.tokens.output_tokens) }}">{{ "{:,}".format(turn.tokens.total_tokens) }} tok</span>
+                    {% endif %}
+                    {% if turn.cost is not none %}
+                    <span class="turn-cost">{{ turn.cost | fmtcost }}</span>
                     {% endif %}
 
                     <span class="turn-time" title="{{ turn.timestamp | fmttime }}">
@@ -394,6 +413,28 @@
         font-weight: 700;
     }
     .step-of { color: var(--on-surface-muted); }
+
+    .turn-tokens,
+    .turn-cost {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.15rem 0.5rem;
+        border-radius: var(--radius-full);
+        font-family: var(--font-mono);
+        font-size: 0.65rem;
+        font-weight: 600;
+        background: var(--surface-container-high);
+        color: var(--on-surface-muted);
+        white-space: nowrap;
+    }
+    .turn-cost {
+        font-weight: 700;
+        color: var(--secondary, #0d7fd4);
+    }
+    .stat-item--cost .stat-value {
+        color: var(--secondary, #0d7fd4);
+        font-family: var(--font-mono);
+    }
 
     .turn-time {
         font-size: 0.7rem;

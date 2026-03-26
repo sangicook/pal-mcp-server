@@ -57,6 +57,12 @@
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                     {{ t.last_updated_at | reltime }}
                 </span>
+                {% if t.total_cost is not none %}
+                <span class="tc-meta-item tc-meta-cost">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    {{ t.total_cost | fmtcost }}
+                </span>
+                {% endif %}
             </div>
         </div>
     </a>
@@ -238,6 +244,12 @@
         color: var(--on-surface-muted);
     }
     .tc-meta-item svg { opacity: 0.5; }
+    .tc-meta-cost {
+        color: var(--secondary, #0d7fd4);
+        font-family: var(--font-mono);
+        font-weight: 700;
+    }
+    .tc-meta-cost svg { opacity: 0.7; }
 
     /* ---------- Error banner ---------- */
     .error-banner {

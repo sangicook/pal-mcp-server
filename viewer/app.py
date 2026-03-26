@@ -41,9 +41,7 @@ def _has_normalized_schema(conn: sqlite3.Connection) -> bool:
     """Check if the DB uses the new normalized schema. Cached after first call."""
     global _schema_is_normalized
     if _schema_is_normalized is None:
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='threads'"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='threads'")
         _schema_is_normalized = cursor.fetchone() is not None
     return _schema_is_normalized
 
@@ -69,39 +67,48 @@ def _all_threads_normalized(conn: sqlite3.Connection) -> list[dict]:
 
     thread_ids = [row["thread_id"] for row in rows]
 
-    # Batch-load model names and turn counts
+    # Batch-load model names and cost per thread in a single query
     models_by_thread: dict[str, list[str]] = {}
+    cost_by_thread: dict[str, float] = {}
     if thread_ids:
         placeholders = ",".join("?" * len(thread_ids))
-        model_rows = conn.execute(
-            f"SELECT thread_id, model_name FROM turns WHERE thread_id IN ({placeholders}) "
-            f"AND model_name IS NOT NULL GROUP BY thread_id, model_name",
+        agg_rows = conn.execute(
+            f"SELECT thread_id, "
+            f"GROUP_CONCAT(DISTINCT model_name) as model_names, "
+            f"SUM(json_extract(model_metadata, '$.usage.cost')) as total_cost "
+            f"FROM turns WHERE thread_id IN ({placeholders}) "
+            f"GROUP BY thread_id",
             thread_ids,
         ).fetchall()
-        for mrow in model_rows:
-            models_by_thread.setdefault(mrow["thread_id"], []).append(mrow["model_name"])
+        for arow in agg_rows:
+            tid = arow["thread_id"]
+            if arow["model_names"]:
+                models_by_thread[tid] = arow["model_names"].split(",")
+            if arow["total_cost"] is not None:
+                cost_by_thread[tid] = arow["total_cost"]
 
     threads = []
     for row in rows:
         tid = row["thread_id"]
         initial_ctx = json.loads(row["initial_context"]) if row["initial_context"] else {}
         # Build a minimal ctx dict with just enough for the list page helpers
-        threads.append({
-            "thread_id": tid,
-            "tool_name": row["tool_name"],
-            "initial_context": initial_ctx,
-            "created_at": row["created_at"],
-            "last_updated_at": row["last_updated_at"],
-            "turns": [{"model_name": m} for m in models_by_thread.get(tid, [])],
-        })
+        threads.append(
+            {
+                "thread_id": tid,
+                "tool_name": row["tool_name"],
+                "initial_context": initial_ctx,
+                "created_at": row["created_at"],
+                "last_updated_at": row["last_updated_at"],
+                "turns": [{"model_name": m} for m in models_by_thread.get(tid, [])],
+                "total_cost": cost_by_thread.get(tid),
+            }
+        )
     return threads
 
 
 def _all_threads_legacy(conn: sqlite3.Connection) -> list[dict]:
     """Fallback: query legacy conversation_store table."""
-    rows = conn.execute(
-        "SELECT key, value FROM conversation_store ORDER BY updated_at DESC"
-    ).fetchall()
+    rows = conn.execute("SELECT key, value FROM conversation_store ORDER BY updated_at DESC").fetchall()
     threads = []
     for row in rows:
         if not row["key"].startswith("thread:"):
@@ -142,17 +149,19 @@ def _load_turns_for_thread(conn: sqlite3.Connection, thread_id: str) -> list[dic
     turns = []
     for trow in turn_rows:
         files, images = files_by_turn.get(trow["id"], ([], []))
-        turns.append({
-            "role": trow["role"],
-            "content": trow["content"],
-            "timestamp": trow["timestamp"],
-            "tool_name": trow["tool_name"],
-            "model_provider": trow["model_provider"],
-            "model_name": trow["model_name"],
-            "model_metadata": json.loads(trow["model_metadata"]) if trow["model_metadata"] else None,
-            "files": files if files else None,
-            "images": images if images else None,
-        })
+        turns.append(
+            {
+                "role": trow["role"],
+                "content": trow["content"],
+                "timestamp": trow["timestamp"],
+                "tool_name": trow["tool_name"],
+                "model_provider": trow["model_provider"],
+                "model_name": trow["model_name"],
+                "model_metadata": json.loads(trow["model_metadata"]) if trow["model_metadata"] else None,
+                "files": files if files else None,
+                "images": images if images else None,
+            }
+        )
     return turns
 
 
@@ -302,6 +311,44 @@ def _provider_for_model(model_name: str, turns: list[dict]) -> str | None:
     return None
 
 
+def _get_usage_dict(metadata: dict | None) -> dict | None:
+    """Safely extract the usage dict from turn model_metadata."""
+    if not metadata or not isinstance(metadata, dict):
+        return None
+    usage = metadata.get("usage")
+    if not usage or not isinstance(usage, dict):
+        return None
+    return usage
+
+
+def _extract_turn_cost(metadata: dict | None) -> float | None:
+    """Extract cost from a turn's model_metadata."""
+    usage = _get_usage_dict(metadata)
+    if usage is None:
+        return None
+    cost = usage.get("cost")
+    if cost is None:
+        return None
+    try:
+        return float(cost)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_turn_tokens(metadata: dict | None) -> dict:
+    """Extract token counts from a turn's model_metadata."""
+    result = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    usage = _get_usage_dict(metadata)
+    if usage is None:
+        return result
+    for key in result:
+        try:
+            result[key] = int(usage.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            pass
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Time helpers
 # ---------------------------------------------------------------------------
@@ -362,6 +409,22 @@ def markdown_filter(text: str) -> Markup:
     return Markup(html)
 
 
+@app.template_filter("fmtcost")
+def fmtcost_filter(value) -> str:
+    """Format a dollar cost at appropriate precision."""
+    if value is None:
+        return ""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if v < 0.01:
+        return f"${v:.4f}"
+    if v < 1.00:
+        return f"${v:.3f}"
+    return f"${v:.2f}"
+
+
 @app.template_filter("reltime")
 def reltime_filter(iso_str: str) -> str:
     return _relative_time(iso_str)
@@ -418,6 +481,7 @@ def thread_list():
                 "turn_count": len(ctx.get("turns", [])),
                 "created_at": ctx.get("created_at", ""),
                 "last_updated_at": ctx.get("last_updated_at", ""),
+                "total_cost": ctx.get("total_cost"),
             }
         )
     return render_template("thread_list.html", threads=thread_data, db_path=_db_path())
@@ -436,6 +500,9 @@ def thread_detail(thread_id: str):
 
     # Enrich turns with parsed content and stance info
     enriched_turns = []
+    thread_total_cost = 0.0
+    thread_total_tokens = 0
+    has_any_cost = False
     for turn in turns:
         parsed = _parse_turn_content(turn.get("content", ""))
         display_text = _extract_display_text(parsed)
@@ -453,6 +520,15 @@ def thread_detail(thread_id: str):
         if not stance and turn_type == "consultant_response":
             stance = metadata.get("stance")
 
+        # Extract cost and tokens
+        turn_cost = _extract_turn_cost(metadata)
+        turn_tokens = _extract_turn_tokens(metadata)
+
+        if turn_cost is not None:
+            thread_total_cost += turn_cost
+            has_any_cost = True
+        thread_total_tokens += turn_tokens.get("total_tokens", 0)
+
         enriched_turns.append(
             {
                 "role": turn.get("role", ""),
@@ -468,6 +544,8 @@ def thread_detail(thread_id: str):
                 "images": turn.get("images") or [],
                 "tool_name": turn.get("tool_name"),
                 "work_history": work_history,
+                "cost": turn_cost,
+                "tokens": turn_tokens,
             }
         )
 
@@ -477,6 +555,8 @@ def thread_detail(thread_id: str):
         proposal=proposal,
         roster=roster,
         turns=enriched_turns,
+        total_cost=thread_total_cost if has_any_cost else None,
+        total_tokens=thread_total_tokens,
     )
 
 

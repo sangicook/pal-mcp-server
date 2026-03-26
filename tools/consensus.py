@@ -488,6 +488,8 @@ of the evidence, even when it strongly points in one direction.""",
                         model_metadata={
                             "stance": model_response.get("stance", "neutral"),
                             "turn_type": "consultant_response",
+                            "usage": model_response.get("usage", {}),
+                            "metadata": model_response.get("metadata", {}),
                         },
                     )
 
@@ -639,14 +641,17 @@ of the evidence, even when it strongly points in one direction.""",
                 images=request.images if request.images else None,
             )
 
+            extra_meta = response.metadata if isinstance(response.metadata, dict) else {}
             return {
                 "model": model_name,
                 "stance": stance,
                 "status": "success",
                 "verdict": response.content,
+                "usage": response.usage if isinstance(response.usage, dict) else {},
                 "metadata": {
                     "provider": provider.get_provider_type().value,
                     "model_name": model_name,
+                    **extra_meta,
                 },
             }
 
