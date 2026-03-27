@@ -955,6 +955,20 @@ install_dependencies() {
         fi
     done
 
+    # Also check if the lock file changed since last install (catch new deps after git pull)
+    if [[ "$deps_needed" == false ]] && [[ -f "requirements-lock.txt" ]]; then
+        local lock_hash
+        lock_hash=$(md5sum requirements-lock.txt 2>/dev/null | cut -d' ' -f1 || shasum requirements-lock.txt 2>/dev/null | cut -d' ' -f1 || echo "")
+        local stored_hash=""
+        if [[ -f "$VENV_PATH/.lock_hash" ]]; then
+            stored_hash=$(cat "$VENV_PATH/.lock_hash" 2>/dev/null || echo "")
+        fi
+        if [[ -n "$lock_hash" ]] && [[ "$lock_hash" != "$stored_hash" ]]; then
+            print_info "Lock file changed — syncing dependencies..."
+            deps_needed=true
+        fi
+    fi
+
     if [[ "$deps_needed" == false ]]; then
         print_success "Dependencies already installed"
         return 0
@@ -973,15 +987,21 @@ install_dependencies() {
     local install_output
     local exit_code=0
 
+    # Prefer the lock file for reproducible installs; fall back to requirements.txt
+    local req_file="requirements.txt"
+    if [[ -f "requirements-lock.txt" ]]; then
+        req_file="requirements-lock.txt"
+    fi
+
     echo -n "Downloading packages..."
 
     if command -v uv &> /dev/null && [[ -f "$VENV_PATH/uv_created" ]]; then
         print_info "Using uv for faster package installation..."
-        install_output=$(uv pip install -q -r requirements.txt --python "$python_cmd" 2>&1) || exit_code=$?
+        install_output=$(uv pip install -q -r "$req_file" --python "$python_cmd" 2>&1) || exit_code=$?
     elif [[ -n "${VIRTUAL_ENV:-}" ]] || [[ "$python_cmd" == *"$VENV_PATH"* ]]; then
-        install_output=$("$python_cmd" -m pip install -q -r requirements.txt 2>&1) || exit_code=$?
+        install_output=$("$python_cmd" -m pip install -q -r "$req_file" 2>&1) || exit_code=$?
     else
-        install_output=$("$python_cmd" -m pip install -q --user -r requirements.txt 2>&1) || exit_code=$?
+        install_output=$("$python_cmd" -m pip install -q --user -r "$req_file" 2>&1) || exit_code=$?
     fi
 
     if [[ $exit_code -ne 0 ]]; then
@@ -1015,14 +1035,14 @@ install_dependencies() {
             print_error "Permission denied during installation"
             echo ""
             echo "Try using a virtual environment or install with --user flag:"
-            echo "  $python_cmd -m pip install --user -r requirements.txt"
+            echo "  $python_cmd -m pip install --user -r $req_file"
         else
             echo "Try running manually:"
             if [[ "$use_uv" == true ]]; then
-                echo "  uv pip install -r requirements.txt --python $python_cmd"
+                echo "  uv pip install -r $req_file --python $python_cmd"
                 echo "Or fallback to pip:"
             fi
-            echo "  $python_cmd -m pip install -r requirements.txt"
+            echo "  $python_cmd -m pip install -r $req_file"
             echo ""
             echo "Or install individual packages:"
             echo "  $python_cmd -m pip install mcp google-genai openai pydantic python-dotenv"
@@ -1030,6 +1050,11 @@ install_dependencies() {
         return 1
     else
         echo -e "\r${GREEN}✓ Setup complete!${NC}                    "
+
+        # Save lock file hash so we can detect changes on next run
+        if [[ -f "requirements-lock.txt" ]] && [[ -d "$VENV_PATH" ]]; then
+            (md5sum requirements-lock.txt 2>/dev/null || shasum requirements-lock.txt 2>/dev/null) | cut -d' ' -f1 > "$VENV_PATH/.lock_hash" 2>/dev/null || true
+        fi
 
         # Verify critical imports work
         if ! check_package "$python_cmd" "dotenv"; then
